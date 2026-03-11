@@ -1,6 +1,6 @@
 [project]
 name = "canopy-cloud"
-version = "0.1.0"
+version = "0.2.0"
 description = "Budget & Carbon-Aware Infrastructure Architect"
 readme = "README.md"
 license = "Apache-2.0"
