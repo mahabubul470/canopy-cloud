@@ -16,6 +16,8 @@ repos:
           - typer>=0.15.0
           - httpx>=0.27.0
           - rich>=13.0.0
+          - pyyaml>=6.0
+          - types-PyYAML>=6.0
         args: [--strict]
 
   - repo: local
