@@ -1,6 +1,6 @@
 """Canopy CLI entry point."""
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -25,7 +25,7 @@ def version_callback(value: bool) -> None:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--version", "-v", callback=version_callback, is_eager=True),
     ] = None,
 ) -> None:
@@ -35,7 +35,7 @@ def main(
 @app.command()
 def audit(
     provider: Annotated[str, typer.Option(help="Cloud provider (aws, gcp)")] = "aws",
-    region: Annotated[Optional[str], typer.Option(help="Filter by region")] = None,
+    region: Annotated[str | None, typer.Option(help="Filter by region")] = None,
     output: Annotated[str, typer.Option(help="Output format (table, json)")] = "table",
 ) -> None:
     """Scan running infrastructure and compute EcoWeight scores."""

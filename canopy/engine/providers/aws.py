@@ -1,6 +1,7 @@
 """AWS cloud provider implementation."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -62,11 +63,10 @@ class AWSProvider(CloudProvider):
     """AWS cloud provider using boto3."""
 
     def __init__(self, profile: str | None = None, default_region: str = "us-east-1") -> None:
-        session_kwargs: dict[str, str] = {}
-        if profile:
-            session_kwargs["profile_name"] = profile
-        session_kwargs["region_name"] = default_region
-        self._session = boto3.Session(**session_kwargs)
+        self._session = boto3.Session(
+            profile_name=profile,
+            region_name=default_region,
+        )
         self._default_region = default_region
 
     @property
@@ -143,12 +143,12 @@ class AWSProvider(CloudProvider):
 
         return workloads
 
-    def _get_avg_cpu(self, cw_client: object, instance_id: str) -> float:
+    def _get_avg_cpu(self, cw_client: Any, instance_id: str) -> float:
         """Get average CPU utilization over the last 7 days."""
         try:
-            end = datetime.now(timezone.utc)
+            end = datetime.now(UTC)
             start = end - timedelta(days=7)
-            response = cw_client.get_metric_statistics(  # type: ignore[union-attr]
+            response = cw_client.get_metric_statistics(
                 Namespace="AWS/EC2",
                 MetricName="CPUUtilization",
                 Dimensions=[{"Name": "InstanceId", "Value": instance_id}],
@@ -157,10 +157,10 @@ class AWSProvider(CloudProvider):
                 Period=86400,
                 Statistics=["Average"],
             )
-            datapoints = response.get("Datapoints", [])
+            datapoints: list[dict[str, Any]] = response.get("Datapoints", [])
             if not datapoints:
                 return 0.0
-            return sum(d["Average"] for d in datapoints) / len(datapoints)
+            return float(sum(d["Average"] for d in datapoints) / len(datapoints))
         except Exception:
             return 0.0
 

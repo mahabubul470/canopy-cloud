@@ -4,36 +4,46 @@ import httpx
 
 from canopy.models.core import Region
 
+
 # Static fallback data based on publicly available sources.
 # Used when no API key is configured or when offline.
 # Sources: Google Cloud CFE%, Electricity Maps, WattTime
+def _r(
+    provider: str, name: str, location: str, cfe: int, intensity: int
+) -> dict[str, object]:
+    return {
+        "provider": provider, "name": name,
+        "location": location, "cfe": cfe, "intensity": intensity,
+    }
+
+
 STATIC_REGIONS: list[dict[str, object]] = [
     # GCP
-    {"provider": "gcp", "name": "europe-north1", "location": "Finland", "cfe": 94, "intensity": 8},
-    {"provider": "gcp", "name": "europe-north2", "location": "Stockholm, SE", "cfe": 100, "intensity": 3},
-    {"provider": "gcp", "name": "europe-west9", "location": "Paris, FR", "cfe": 96, "intensity": 16},
-    {"provider": "gcp", "name": "northamerica-northeast1", "location": "Montréal, CA", "cfe": 99, "intensity": 5},
-    {"provider": "gcp", "name": "us-west1", "location": "Oregon, US", "cfe": 87, "intensity": 79},
-    {"provider": "gcp", "name": "us-central1", "location": "Iowa, US", "cfe": 97, "intensity": 39},
-    {"provider": "gcp", "name": "us-east1", "location": "South Carolina, US", "cfe": 31, "intensity": 576},
-    {"provider": "gcp", "name": "us-east4", "location": "Virginia, US", "cfe": 28, "intensity": 312},
-    {"provider": "gcp", "name": "asia-south1", "location": "Mumbai, IN", "cfe": 9, "intensity": 679},
-    {"provider": "gcp", "name": "asia-east1", "location": "Taiwan", "cfe": 10, "intensity": 541},
-    {"provider": "gcp", "name": "asia-northeast1", "location": "Tokyo, JP", "cfe": 19, "intensity": 463},
-    {"provider": "gcp", "name": "europe-west1", "location": "Belgium", "cfe": 74, "intensity": 110},
-    # AWS (estimated from grid data — AWS does not publish per-region CFE%)
-    {"provider": "aws", "name": "eu-north-1", "location": "Stockholm, SE", "cfe": 98, "intensity": 8},
-    {"provider": "aws", "name": "ca-central-1", "location": "Montréal, CA", "cfe": 95, "intensity": 12},
-    {"provider": "aws", "name": "eu-west-1", "location": "Ireland", "cfe": 75, "intensity": 98},
-    {"provider": "aws", "name": "eu-west-3", "location": "Paris, FR", "cfe": 93, "intensity": 22},
-    {"provider": "aws", "name": "eu-central-1", "location": "Frankfurt, DE", "cfe": 55, "intensity": 252},
-    {"provider": "aws", "name": "us-west-2", "location": "Oregon, US", "cfe": 85, "intensity": 79},
-    {"provider": "aws", "name": "us-east-1", "location": "N. Virginia, US", "cfe": 30, "intensity": 312},
-    {"provider": "aws", "name": "us-east-2", "location": "Ohio, US", "cfe": 25, "intensity": 410},
-    {"provider": "aws", "name": "ap-south-1", "location": "Mumbai, IN", "cfe": 9, "intensity": 679},
-    {"provider": "aws", "name": "ap-southeast-1", "location": "Singapore", "cfe": 3, "intensity": 408},
-    {"provider": "aws", "name": "ap-northeast-1", "location": "Tokyo, JP", "cfe": 19, "intensity": 463},
-    {"provider": "aws", "name": "sa-east-1", "location": "São Paulo, BR", "cfe": 80, "intensity": 61},
+    _r("gcp", "europe-north1", "Finland", 94, 8),
+    _r("gcp", "europe-north2", "Stockholm, SE", 100, 3),
+    _r("gcp", "europe-west9", "Paris, FR", 96, 16),
+    _r("gcp", "northamerica-northeast1", "Montréal, CA", 99, 5),
+    _r("gcp", "us-west1", "Oregon, US", 87, 79),
+    _r("gcp", "us-central1", "Iowa, US", 97, 39),
+    _r("gcp", "us-east1", "S. Carolina, US", 31, 576),
+    _r("gcp", "us-east4", "Virginia, US", 28, 312),
+    _r("gcp", "asia-south1", "Mumbai, IN", 9, 679),
+    _r("gcp", "asia-east1", "Taiwan", 10, 541),
+    _r("gcp", "asia-northeast1", "Tokyo, JP", 19, 463),
+    _r("gcp", "europe-west1", "Belgium", 74, 110),
+    # AWS (estimated — AWS does not publish per-region CFE%)
+    _r("aws", "eu-north-1", "Stockholm, SE", 98, 8),
+    _r("aws", "ca-central-1", "Montréal, CA", 95, 12),
+    _r("aws", "eu-west-1", "Ireland", 75, 98),
+    _r("aws", "eu-west-3", "Paris, FR", 93, 22),
+    _r("aws", "eu-central-1", "Frankfurt, DE", 55, 252),
+    _r("aws", "us-west-2", "Oregon, US", 85, 79),
+    _r("aws", "us-east-1", "N. Virginia, US", 30, 312),
+    _r("aws", "us-east-2", "Ohio, US", 25, 410),
+    _r("aws", "ap-south-1", "Mumbai, IN", 9, 679),
+    _r("aws", "ap-southeast-1", "Singapore", 3, 408),
+    _r("aws", "ap-northeast-1", "Tokyo, JP", 19, 463),
+    _r("aws", "sa-east-1", "São Paulo, BR", 80, 61),
 ]
 
 
