@@ -130,12 +130,154 @@ def audit(
         )
 
 
+SEVERITY_COLORS: dict[str, str] = {
+    "block": "bold red",
+    "warn": "yellow",
+    "info": "blue",
+}
+
+
 @app.command()
 def plan(
-    stack: Annotated[str, typer.Argument(help="IaC stack to analyze")] = ".",
+    plan_file: Annotated[str, typer.Argument(help="Terraform/Pulumi plan JSON file")],
+    source: Annotated[str, typer.Option(help="IaC source (auto, terraform, pulumi)")] = "auto",
+    policy: Annotated[str | None, typer.Option(help="Path to canopy-policy.yaml")] = None,
+    region: Annotated[str, typer.Option(help="Default region for resources")] = "us-east-1",
+    output: Annotated[str, typer.Option(help="Output format (table, json)")] = "table",
 ) -> None:
     """Preview cost and carbon impact of infrastructure changes."""
-    console.print("[yellow]canopy plan is coming in v0.2[/yellow]")
+    import json as json_mod
+
+    from canopy.engine.iac.pulumi import parse_preview_dict
+    from canopy.engine.iac.terraform import parse_plan_json
+    from canopy.engine.plan import estimate_plan
+    from canopy.engine.policy import load_policy
+
+    plan_path = Path(plan_file)
+    if not plan_path.is_file():
+        console.print(f"[red]Plan file not found: {plan_file}[/red]")
+        raise typer.Exit(1)
+
+    # Auto-detect IaC source or use explicit override
+    if source == "auto":
+        raw = json_mod.loads(plan_path.read_text(encoding="utf-8"))
+        if "resource_changes" in raw:
+            parsed = parse_plan_json(plan_path)
+        elif "steps" in raw:
+            parsed = parse_preview_dict(raw)
+        else:
+            console.print("[red]Could not detect plan format. Use --source.[/red]")
+            raise typer.Exit(1)
+    elif source == "pulumi":
+        raw = json_mod.loads(plan_path.read_text(encoding="utf-8"))
+        parsed = parse_preview_dict(raw)
+    else:
+        parsed = parse_plan_json(plan_path)
+
+    pol = load_policy(Path(policy) if policy else None)
+    estimate = estimate_plan(parsed, policy=pol, default_region=region)
+
+    if output == "json":
+        data = {
+            "source": estimate.source,
+            "resources": [r.model_dump(mode="json") for r in estimate.resources],
+            "violations": [v.model_dump(mode="json") for v in estimate.violations],
+            "summary": {
+                "total_monthly_cost_usd": round(estimate.total_monthly_cost_usd, 2),
+                "total_cost_delta_usd": round(estimate.total_cost_delta_usd, 2),
+                "total_monthly_carbon_kg": round(estimate.total_monthly_carbon_kg, 3),
+                "total_carbon_delta_kg": round(estimate.total_carbon_delta_kg, 3),
+            },
+        }
+        console.print_json(json_mod.dumps(data, indent=2, default=str))
+        return
+
+    if not estimate.resources:
+        console.print("[yellow]No compute resource changes found in plan.[/yellow]")
+        return
+
+    # Resource changes table
+    table = Table(title="Infrastructure Changes — Cost & Carbon Impact", show_lines=True)
+    table.add_column("Resource", style="cyan")
+    table.add_column("Action")
+    table.add_column("Instance", justify="center")
+    table.add_column("Region")
+    table.add_column("Cost/mo", justify="right", style="yellow")
+    table.add_column("Cost Delta", justify="right")
+    table.add_column("Carbon/mo", justify="right", style="green")
+    table.add_column("Carbon Delta", justify="right")
+
+    action_colors: dict[str, str] = {
+        "create": "green",
+        "update": "yellow",
+        "delete": "red",
+        "no-op": "dim",
+    }
+
+    for r in estimate.resources:
+        a_color = action_colors.get(r.action.value, "white")
+        cost_delta_str = _format_delta(r.cost_delta_usd, "$", 2)
+        carbon_delta_str = _format_delta(r.carbon_delta_kg, "", 1, " kg")
+
+        table.add_row(
+            r.address,
+            f"[{a_color}]{r.action.value.upper()}[/{a_color}]",
+            r.instance_type or "—",
+            r.region or "—",
+            f"${r.monthly_cost_usd:,.2f}",
+            cost_delta_str,
+            f"{r.monthly_carbon_kg_co2:,.1f} kg",
+            carbon_delta_str,
+        )
+
+    console.print(table)
+
+    # Summary line
+    console.print()
+    cost_delta = _format_delta(estimate.total_cost_delta_usd, "$", 2)
+    carbon_delta = _format_delta(estimate.total_carbon_delta_kg, "", 1, " kg CO₂")
+    console.print(
+        f"[bold]Total monthly impact:[/bold] "
+        f"[yellow]${estimate.total_monthly_cost_usd:,.2f}/mo[/yellow] ({cost_delta})"
+        f" | [green]{estimate.total_monthly_carbon_kg:,.1f} kg CO₂/mo[/green] ({carbon_delta})"
+    )
+
+    # Policy violations
+    if estimate.violations:
+        console.print()
+        viol_table = Table(title="Policy Violations", show_lines=True)
+        viol_table.add_column("Severity")
+        viol_table.add_column("Policy")
+        viol_table.add_column("Resource", style="cyan")
+        viol_table.add_column("Message")
+
+        for v in estimate.violations:
+            sev_color = SEVERITY_COLORS.get(v.severity.value, "white")
+            viol_table.add_row(
+                f"[{sev_color}]{v.severity.value.upper()}[/{sev_color}]",
+                v.policy_name,
+                v.resource_name or v.resource_id or "—",
+                v.message,
+            )
+
+        console.print(viol_table)
+
+        blocking = sum(1 for v in estimate.violations if v.severity.value == "block")
+        if blocking:
+            console.print(
+                f"\n[bold red]{blocking} blocking violation(s)"
+                f" — this plan should not be applied.[/bold red]"
+            )
+            raise typer.Exit(1)
+
+
+def _format_delta(value: float, prefix: str, decimals: int, suffix: str = "") -> str:
+    """Format a delta value with color and sign."""
+    if abs(value) < 0.005:
+        return "[dim]—[/dim]"
+    if value > 0:
+        return f"[red]+{prefix}{value:,.{decimals}f}{suffix}[/red]"
+    return f"[green]-{prefix}{abs(value):,.{decimals}f}{suffix}[/green]"
 
 
 @app.command()

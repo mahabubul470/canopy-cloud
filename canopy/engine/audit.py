@@ -8,6 +8,7 @@ from canopy.engine.carbon.estimator import CarbonEstimator
 from canopy.engine.detectors import detect_idle, detect_region_move, detect_rightsize
 from canopy.engine.providers.aws import AWSProvider
 from canopy.engine.providers.base import CloudProvider
+from canopy.engine.providers.gcp import GCPProvider
 from canopy.models.core import EcoWeight, Recommendation, SavingsSummary
 
 # Default budget allocations when no policy is configured
@@ -18,6 +19,7 @@ DEFAULT_CARBON_HOURLY_GCO2 = 100.0
 def get_provider(name: str) -> CloudProvider:
     providers: dict[str, type[CloudProvider]] = {
         "aws": AWSProvider,
+        "gcp": GCPProvider,
     }
     provider_cls = providers.get(name)
     if not provider_cls:
