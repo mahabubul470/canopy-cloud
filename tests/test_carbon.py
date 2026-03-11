@@ -54,7 +54,7 @@ class TestCarbonEstimator:
             "avg_cpu_percent": 50.0,
         }
         defaults.update(kwargs)
-        return Workload(**defaults)  # type: ignore[arg-type]
+        return Workload(**defaults)
 
     def test_estimate_power_scales_with_cpu(self) -> None:
         low_cpu = self._make_workload(avg_cpu_percent=10.0)
