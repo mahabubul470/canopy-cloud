@@ -17,6 +17,14 @@ class CanopyConfig(BaseModel):
     regions: list[str] = Field(default_factory=list)
     idle_cpu_threshold: float = Field(default=2.0, ge=0, le=100)
     rightsize_cpu_threshold: float = Field(default=15.0, ge=0, le=100)
+    # Phase 3 — agentic orchestration
+    audit_log_dir: str | None = None
+    approval_channel: str | None = None
+    slack_webhook_url: str | None = None
+    github_token: str | None = None
+    github_repo: str | None = None
+    carl_urgency: str = "normal"
+    dashboard_port: int = Field(default=8080, ge=1, le=65535)
 
 
 _SEARCH_PATHS = [

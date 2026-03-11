@@ -10,7 +10,7 @@ This guide gets you from zero to your first Canopy audit in under five minutes.
 
 ### Required AWS permissions
 
-Canopy only reads data. The minimum IAM policy:
+For audit (read-only):
 
 ```json
 {
@@ -23,6 +23,26 @@ Canopy only reads data. The minimum IAM policy:
         "ec2:DescribeRegions",
         "cloudwatch:GetMetricStatistics",
         "pricing:GetProducts"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+For `canopy apply` (requires write access):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:TerminateInstances",
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        "ec2:ModifyInstanceAttribute"
       ],
       "Resource": "*"
     }
@@ -44,7 +64,7 @@ Verify:
 
 ```bash
 canopy --version
-# canopy v0.2.0
+# canopy v0.3.0
 ```
 
 ## Step 1: Explore region efficiency
@@ -166,7 +186,61 @@ Or pass it explicitly:
 canopy audit --config canopy.yaml
 ```
 
+## Step 6: Preview and apply optimizations
+
+Once you've reviewed the audit results, you can act on them:
+
+```bash
+# Dry run — see what would happen without changing anything
+canopy apply --provider aws --dry-run
+
+# Apply with interactive CLI approval (one-by-one)
+canopy apply --provider aws
+
+# Skip confirmation (auto-approve all)
+canopy apply --provider aws --yes
+
+# Send approval request to Slack instead
+canopy apply --provider aws --approval slack
+
+# Create a GitHub issue for approval
+canopy apply --provider aws --approval github
+```
+
+The apply engine supports three actions:
+- **Terminate** idle instances
+- **Rightsize** under-utilized instances (stop, modify type, start)
+- **Region move** — creates a tracking issue (too destructive to automate)
+
+All actions are recorded in the audit log at `~/.config/canopy/audit-log/`.
+
+## Step 7: Launch the dashboard
+
+If you installed the dashboard extra (`pip install -e ".[dashboard]"`):
+
+```bash
+canopy dashboard --port 8080
+```
+
+Open `http://localhost:8080` to see:
+- Overview cards (workloads, cost, carbon, savings)
+- Workload table with EcoWeight scores
+- Region carbon intensity chart
+- Recent audit log entries
+
+## Step 8: Use MCP servers
+
+If you installed the MCP extra (`pip install -e ".[mcp]"`), Canopy exposes tools that LLM hosts (like Claude) can call:
+
+```bash
+# List available servers
+canopy mcp list
+
+# Start a server (communicates over stdio)
+canopy mcp serve electricity
+canopy mcp serve billing-aws
+```
+
 ## What's next
 
-- **Phase 2** adds `canopy plan` — pre-flight cost/carbon checks on Terraform/Pulumi changes, with GitHub Actions integration.
-- **Phase 3** adds `canopy apply` — execute approved optimizations with agentic AI, Slack approval workflows, and a web dashboard.
+- **Phase 4** — ML-based CARL scheduling, multi-cloud policy orchestration, and cost anomaly detection.

@@ -10,6 +10,7 @@ repos:
     rev: v1.13.0
     hooks:
       - id: mypy
+        exclude: ^tests/
         additional_dependencies:
           - pydantic>=2.0.0
           - boto3-stubs[ec2,cloudwatch,ce,pricing]>=1.35.0
@@ -18,6 +19,8 @@ repos:
           - rich>=13.0.0
           - pyyaml>=6.0
           - types-PyYAML>=6.0
+          - "mcp[cli]>=1.0.0"
+          - fastapi>=0.115.0
         args: [--strict]
 
   - repo: local

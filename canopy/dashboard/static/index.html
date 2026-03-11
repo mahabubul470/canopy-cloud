@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canopy Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Canopy Dashboard</h1>
+        <p class="subtitle">Budget &amp; Carbon-Aware Infrastructure Architect</p>
+    </header>
+
+    <main>
+        <!-- Overview Cards -->
+        <section class="cards" id="overview-cards">
+            <div class="card">
+                <h3>Workloads</h3>
+                <p class="value" id="workload-count">-</p>
+            </div>
+            <div class="card">
+                <h3>Monthly Cost</h3>
+                <p class="value" id="total-cost">-</p>
+            </div>
+            <div class="card">
+                <h3>Monthly Carbon</h3>
+                <p class="value" id="total-carbon">-</p>
+            </div>
+            <div class="card">
+                <h3>Recommendations</h3>
+                <p class="value" id="rec-count">-</p>
+            </div>
+            <div class="card savings">
+                <h3>Potential Savings</h3>
+                <p class="value" id="potential-savings">-</p>
+            </div>
+        </section>
+
+        <!-- Workloads Table -->
+        <section class="panel">
+            <h2>Workloads</h2>
+            <table id="workloads-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Region</th>
+                        <th>Cost/mo</th>
+                        <th>Carbon/mo</th>
+                        <th>EcoWeight</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <!-- Region Intensity Chart -->
+        <section class="panel">
+            <h2>Region Carbon Intensity</h2>
+            <canvas id="intensity-chart" height="300"></canvas>
+        </section>
+
+        <!-- Audit Log -->
+        <section class="panel">
+            <h2>Recent Audit Log</h2>
+            <table id="audit-log-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Action</th>
+                        <th>Workload</th>
+                        <th>Provider</th>
+                        <th>Dry Run</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        const statusColors = {
+            excellent: '#22c55e',
+            good: '#3b82f6',
+            warning: '#eab308',
+            over: '#ef4444',
+            critical: '#dc2626',
+        };
+
+        async function loadOverview() {
+            try {
+                const res = await fetch('/api/overview');
+                const data = await res.json();
+                document.getElementById('workload-count').textContent = data.workload_count;
+                document.getElementById('total-cost').textContent = '$' + data.total_monthly_cost_usd.toLocaleString(undefined, {minimumFractionDigits: 2});
+                document.getElementById('total-carbon').textContent = data.total_monthly_carbon_kg.toLocaleString(undefined, {minimumFractionDigits: 1}) + ' kg CO2';
+                document.getElementById('rec-count').textContent = data.recommendation_count;
+                document.getElementById('potential-savings').textContent = '$' + data.potential_savings_usd.toLocaleString(undefined, {minimumFractionDigits: 2}) + '/mo';
+            } catch (e) {
+                console.error('Failed to load overview:', e);
+            }
+        }
+
+        async function loadWorkloads() {
+            try {
+                const res = await fetch('/api/workloads');
+                const data = await res.json();
+                const tbody = document.querySelector('#workloads-table tbody');
+                tbody.innerHTML = '';
+                for (const w of data.workloads) {
+                    const row = document.createElement('tr');
+                    const color = statusColors[w.status] || '#888';
+                    row.innerHTML = `
+                        <td>${w.workload_name}</td>
+                        <td>${w.region}</td>
+                        <td>$${w.monthly_cost_usd.toFixed(2)}</td>
+                        <td>${w.monthly_carbon_kg.toFixed(1)} kg</td>
+                        <td>${w.ecoweight_score.toFixed(3)}</td>
+                        <td style="color:${color};font-weight:bold">${w.status.toUpperCase()}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+                if (data.workloads.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888">No workloads found</td></tr>';
+                }
+            } catch (e) {
+                console.error('Failed to load workloads:', e);
+            }
+        }
+
+        async function loadTrends() {
+            try {
+                const res = await fetch('/api/trends');
+                const data = await res.json();
+                const ctx = document.getElementById('intensity-chart').getContext('2d');
+                const tierColors = {
+                    platinum: '#22c55e',
+                    gold: '#eab308',
+                    silver: '#94a3b8',
+                    bronze: '#ef4444',
+                };
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.regions.map(r => r.region),
+                        datasets: [{
+                            label: 'Grid Intensity (gCO2/kWh)',
+                            data: data.regions.map(r => r.grid_intensity),
+                            backgroundColor: data.regions.map(r => tierColors[r.tier] || '#888'),
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { title: { display: true, text: 'gCO2eq/kWh' } },
+                            x: { ticks: { maxRotation: 90, minRotation: 45 } },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Failed to load trends:', e);
+            }
+        }
+
+        async function loadAuditLog() {
+            try {
+                const res = await fetch('/api/audit-log');
+                const data = await res.json();
+                const tbody = document.querySelector('#audit-log-table tbody');
+                tbody.innerHTML = '';
+                for (const entry of data.entries.reverse()) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${new Date(entry.timestamp).toLocaleString()}</td>
+                        <td>${entry.action}</td>
+                        <td>${entry.workload_name || entry.workload_id || '-'}</td>
+                        <td>${entry.provider || '-'}</td>
+                        <td>${entry.dry_run ? 'Yes' : 'No'}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+                if (data.entries.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888">No audit log entries</td></tr>';
+                }
+            } catch (e) {
+                console.error('Failed to load audit log:', e);
+            }
+        }
+
+        loadOverview();
+        loadWorkloads();
+        loadTrends();
+        loadAuditLog();
+    </script>
+</body>
+</html>

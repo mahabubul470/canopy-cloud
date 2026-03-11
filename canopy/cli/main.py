@@ -282,10 +282,112 @@ def _format_delta(value: float, prefix: str, decimals: int, suffix: str = "") ->
 
 @app.command()
 def apply(
+    provider: Annotated[str, typer.Option(help="Cloud provider (aws, gcp)")] = "aws",
+    region: Annotated[str | None, typer.Option(help="Filter by region")] = None,
+    config: Annotated[str | None, typer.Option(help="Path to canopy.yaml config file")] = None,
     auto_approve: Annotated[bool, typer.Option("--yes", help="Skip confirmation")] = False,
+    approval: Annotated[str, typer.Option(help="Approval method (cli, slack, github)")] = "cli",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be done")] = False,
 ) -> None:
-    """Apply recommended optimizations."""
-    console.print("[yellow]canopy apply is coming in v0.3[/yellow]")
+    """Apply recommended optimizations to running infrastructure."""
+    from canopy.config import load_config
+    from canopy.engine.apply.aws_executor import AWSApplyExecutor
+    from canopy.engine.apply.executor import ApplyStatus, execute_recommendation
+    from canopy.engine.apply.gcp_executor import GCPApplyExecutor
+    from canopy.engine.audit import run_audit_with_recommendations
+    from canopy.engine.audit_log.writer import AuditLogWriter
+    from canopy.models.audit_log import ActionType
+
+    cfg = load_config(Path(config) if config else None)
+    results, summary = run_audit_with_recommendations(provider=provider, region=region, config=cfg)
+
+    if not summary.recommendations:
+        console.print("[green]No optimizations to apply — infrastructure looks good![/green]")
+        return
+
+    # Select recommendations to apply
+    recs = summary.recommendations
+    if not auto_approve and not dry_run:
+        if approval == "slack" and cfg.slack_webhook_url:
+            from canopy.engine.apply.approval import request_slack_approval
+
+            ok = request_slack_approval(recs, cfg.slack_webhook_url, cfg.approval_channel)
+            if ok:
+                console.print("[green]Approval request sent to Slack.[/green]")
+            else:
+                console.print("[red]Failed to send Slack approval request.[/red]")
+            return
+        if approval == "github" and cfg.github_token and cfg.github_repo:
+            from canopy.engine.apply.approval import request_github_approval
+
+            url = request_github_approval(recs, cfg.github_token, cfg.github_repo)
+            if url:
+                console.print(f"[green]GitHub issue created: {url}[/green]")
+            else:
+                console.print("[red]Failed to create GitHub issue.[/red]")
+            return
+        # Default: CLI interactive approval
+        from canopy.engine.apply.approval import request_cli_approval
+
+        recs = request_cli_approval(recs, console)
+        if not recs:
+            console.print("[yellow]No recommendations approved.[/yellow]")
+            return
+
+    # Create executor
+    executor: AWSApplyExecutor | GCPApplyExecutor
+    if provider == "gcp":
+        executor = GCPApplyExecutor()
+    else:
+        executor = AWSApplyExecutor()
+
+    log_dir = Path(cfg.audit_log_dir) if cfg.audit_log_dir else None
+    audit_writer = AuditLogWriter(base_dir=log_dir) if log_dir else AuditLogWriter()
+
+    # Execute
+    table = Table(title="Apply Results", show_lines=True)
+    table.add_column("Workload", style="cyan")
+    table.add_column("Type")
+    table.add_column("Status")
+    table.add_column("Message")
+
+    for rec in recs:
+        audit_writer.log_action(
+            ActionType.APPLY_STARTED,
+            workload_id=rec.workload_id,
+            workload_name=rec.workload_name,
+            provider=provider,
+            dry_run=dry_run,
+        )
+
+        result = execute_recommendation(executor, rec, dry_run=dry_run)
+
+        status_color = "green" if result.status == ApplyStatus.SUCCESS else "yellow"
+        if result.status == ApplyStatus.FAILED:
+            status_color = "red"
+
+        table.add_row(
+            rec.workload_name,
+            rec.recommendation_type.value.upper(),
+            f"[{status_color}]{result.status.value.upper()}[/{status_color}]",
+            result.message,
+        )
+
+        log_action = (
+            ActionType.APPLY_COMPLETED
+            if result.status in (ApplyStatus.SUCCESS, ApplyStatus.DRY_RUN)
+            else ActionType.APPLY_FAILED
+        )
+        audit_writer.log_action(
+            log_action,
+            workload_id=rec.workload_id,
+            workload_name=rec.workload_name,
+            provider=provider,
+            details={"status": result.status.value, "message": result.message},
+            dry_run=dry_run,
+        )
+
+    console.print(table)
 
 
 @app.command()
@@ -357,6 +459,83 @@ def regions(
         )
 
     console.print(table)
+
+
+# --- MCP subcommand group ---
+
+mcp_app = typer.Typer(name="mcp", help="MCP server management", no_args_is_help=True)
+app.add_typer(mcp_app, name="mcp")
+
+_MCP_SERVERS = ["billing-aws", "billing-gcp", "electricity", "slack", "github"]
+
+
+@mcp_app.command("list")
+def mcp_list() -> None:
+    """List available MCP servers."""
+    table = Table(title="Available MCP Servers", show_lines=True)
+    table.add_column("Server", style="cyan")
+    table.add_column("Description")
+
+    descriptions: dict[str, str] = {
+        "billing-aws": "AWS cost and billing data",
+        "billing-gcp": "GCP cost and billing data",
+        "electricity": "Carbon intensity data via Electricity Maps",
+        "slack": "Slack notifications and approval requests",
+        "github": "GitHub issue creation for optimizations",
+    }
+
+    for name in _MCP_SERVERS:
+        table.add_row(name, descriptions.get(name, ""))
+
+    console.print(table)
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    server_name: Annotated[str, typer.Argument(help="MCP server to start")],
+) -> None:
+    """Start an MCP server (communicates over stdio)."""
+    try:
+        from canopy.mcp import get_server
+    except ImportError:
+        console.print(
+            "[red]MCP dependencies not installed. Install with: pip install canopy-cloud[mcp][/red]"
+        )
+        raise typer.Exit(1)
+
+    if server_name not in _MCP_SERVERS:
+        console.print(
+            f"[red]Unknown server: {server_name}. Available: {', '.join(_MCP_SERVERS)}[/red]"
+        )
+        raise typer.Exit(1)
+
+    server = get_server(server_name)
+    server.run()
+
+
+# --- Dashboard command ---
+
+
+@app.command()
+def dashboard(
+    port: Annotated[int, typer.Option(help="Port to serve on")] = 8080,
+    host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
+) -> None:
+    """Launch the Canopy web dashboard."""
+    try:
+        import uvicorn  # type: ignore[import-not-found,unused-ignore]
+
+        from canopy.dashboard.app import create_app
+    except ImportError:
+        console.print(
+            "[red]Dashboard dependencies not installed. "
+            "Install with: pip install canopy-cloud[dashboard][/red]"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"[green]Starting Canopy dashboard at http://{host}:{port}[/green]")
+    app_instance = create_app()
+    uvicorn.run(app_instance, host=host, port=port)
 
 
 if __name__ == "__main__":

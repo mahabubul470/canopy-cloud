@@ -1,6 +1,6 @@
 [project]
 name = "canopy-cloud"
-version = "0.2.0"
+version = "0.3.0"
 description = "Budget & Carbon-Aware Infrastructure Architect"
 readme = "README.md"
 license = "Apache-2.0"
@@ -36,6 +36,8 @@ dev = [
     "boto3-stubs[ec2,cloudwatch,ce,pricing]>=1.35.0",
     "types-PyYAML>=6.0",
 ]
+mcp = ["mcp[cli]>=1.0.0"]
+dashboard = ["fastapi>=0.115.0", "uvicorn>=0.32.0"]
 
 [project.scripts]
 canopy = "canopy.cli.main:app"
@@ -58,6 +60,10 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["canopy.mcp.*", "canopy.dashboard.*", "canopy.cli.main"]
+warn_unused_ignores = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
