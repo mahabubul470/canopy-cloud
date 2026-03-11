@@ -33,7 +33,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
-    "boto3-stubs[ec2,cloudwatch,ce]>=1.35.0",
+    "boto3-stubs[ec2,cloudwatch,ce,pricing]>=1.35.0",
     "types-PyYAML>=6.0",
 ]
 
