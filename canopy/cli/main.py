@@ -1,5 +1,6 @@
 """Canopy CLI entry point."""
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -14,6 +15,20 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+STATUS_COLORS: dict[str, str] = {
+    "excellent": "green",
+    "good": "blue",
+    "warning": "yellow",
+    "over": "red",
+    "critical": "bold red",
+}
+
+REC_TYPE_COLORS: dict[str, str] = {
+    "idle": "red",
+    "rightsize": "yellow",
+    "region_move": "cyan",
+}
 
 
 def version_callback(value: bool) -> None:
@@ -37,22 +52,25 @@ def audit(
     provider: Annotated[str, typer.Option(help="Cloud provider (aws, gcp)")] = "aws",
     region: Annotated[str | None, typer.Option(help="Filter by region")] = None,
     output: Annotated[str, typer.Option(help="Output format (table, json)")] = "table",
+    config: Annotated[str | None, typer.Option(help="Path to canopy.yaml config file")] = None,
 ) -> None:
     """Scan running infrastructure and compute EcoWeight scores."""
-    from canopy.engine.audit import run_audit
+    from canopy.config import load_config
+    from canopy.engine.audit import run_audit_with_recommendations
+    from canopy.engine.report import format_json
 
-    results = run_audit(provider=provider, region=region)
+    cfg = load_config(Path(config) if config else None)
+    results, summary = run_audit_with_recommendations(provider=provider, region=region, config=cfg)
 
     if output == "json":
-        import json
-
-        console.print_json(json.dumps([r.model_dump(mode="json") for r in results], default=str))
+        console.print_json(format_json(results, summary))
         return
 
     if not results:
         console.print("[yellow]No workloads found.[/yellow]")
         return
 
+    # EcoWeight results table
     table = Table(title="Canopy Audit Results", show_lines=True)
     table.add_column("Workload", style="cyan")
     table.add_column("Region")
@@ -65,13 +83,7 @@ def audit(
 
     for ew in results:
         score = ew.score
-        status_color = {
-            "excellent": "green",
-            "good": "blue",
-            "warning": "yellow",
-            "over": "red",
-            "critical": "bold red",
-        }.get(ew.status, "white")
+        status_color = STATUS_COLORS.get(ew.status, "white")
 
         table.add_row(
             ew.workload_name,
@@ -85,6 +97,37 @@ def audit(
         )
 
     console.print(table)
+
+    # Recommendations table
+    if summary.recommendations:
+        console.print()
+        rec_table = Table(title="Optimization Recommendations", show_lines=True)
+        rec_table.add_column("Workload", style="cyan")
+        rec_table.add_column("Type")
+        rec_table.add_column("Recommendation")
+        rec_table.add_column("Cost Savings/mo", justify="right", style="yellow")
+        rec_table.add_column("Carbon Savings/mo", justify="right", style="green")
+
+        for rec in summary.recommendations:
+            type_color = REC_TYPE_COLORS.get(rec.recommendation_type.value, "white")
+            rec_table.add_row(
+                rec.workload_name,
+                f"[{type_color}]{rec.recommendation_type.value.upper()}[/{type_color}]",
+                rec.reason,
+                f"${rec.estimated_monthly_cost_savings_usd:,.2f}",
+                f"{rec.estimated_monthly_carbon_savings_kg:,.1f} kg",
+            )
+
+        console.print(rec_table)
+
+        # Savings summary
+        console.print()
+        console.print(
+            f"[bold]Total potential savings:[/bold] "
+            f"[yellow]${summary.total_monthly_cost_savings_usd:,.2f}/mo[/yellow]"
+            f" | [green]{summary.total_monthly_carbon_savings_kg:,.1f} kg CO₂/mo[/green]"
+            f" ({summary.recommendation_count} recommendations)"
+        )
 
 
 @app.command()
@@ -105,11 +148,30 @@ def apply(
 
 @app.command()
 def report(
-    output: Annotated[str, typer.Option(help="Output format (table, json, csv)")] = "table",
-    period: Annotated[str, typer.Option(help="Reporting period (7d, 30d, 90d)")] = "30d",
+    provider: Annotated[str, typer.Option(help="Cloud provider (aws, gcp)")] = "aws",
+    region: Annotated[str | None, typer.Option(help="Filter by region")] = None,
+    output: Annotated[str, typer.Option(help="Output format (json, csv)")] = "json",
+    out: Annotated[str | None, typer.Option(help="Output file path")] = None,
+    config: Annotated[str | None, typer.Option(help="Path to canopy.yaml config file")] = None,
 ) -> None:
-    """Generate a CSRD-compatible emissions report."""
-    console.print("[yellow]canopy report is coming in v0.1[/yellow]")
+    """Generate an emissions and cost report with recommendations."""
+    from canopy.config import load_config
+    from canopy.engine.audit import run_audit_with_recommendations
+    from canopy.engine.report import format_csv, format_json
+
+    cfg = load_config(Path(config) if config else None)
+    results, summary = run_audit_with_recommendations(provider=provider, region=region, config=cfg)
+
+    if output == "csv":
+        content = format_csv(results, summary)
+    else:
+        content = format_json(results, summary)
+
+    if out:
+        Path(out).write_text(content, encoding="utf-8")
+        console.print(f"[green]Report written to {out}[/green]")
+    else:
+        console.print(content)
 
 
 @app.command()
