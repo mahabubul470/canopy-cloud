@@ -8,12 +8,13 @@ from canopy.models.core import Region
 # Static fallback data based on publicly available sources.
 # Used when no API key is configured or when offline.
 # Sources: Google Cloud CFE%, Electricity Maps, WattTime
-def _r(
-    provider: str, name: str, location: str, cfe: int, intensity: int
-) -> dict[str, object]:
+def _r(provider: str, name: str, location: str, cfe: int, intensity: int) -> dict[str, object]:
     return {
-        "provider": provider, "name": name,
-        "location": location, "cfe": cfe, "intensity": intensity,
+        "provider": provider,
+        "name": name,
+        "location": location,
+        "cfe": cfe,
+        "intensity": intensity,
     }
 
 
