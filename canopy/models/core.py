@@ -135,3 +135,33 @@ class EcoWeight(BaseModel):
         if score <= 1.2:
             return "over"
         return "critical"
+
+
+class RecommendationType(StrEnum):
+    RIGHTSIZE = "rightsize"
+    IDLE = "idle"
+    REGION_MOVE = "region_move"
+
+
+class Recommendation(BaseModel):
+    """A concrete optimization recommendation for a workload."""
+
+    workload_id: str
+    workload_name: str
+    recommendation_type: RecommendationType
+    reason: str
+    current_instance_type: str | None = None
+    suggested_instance_type: str | None = None
+    current_region: str | None = None
+    suggested_region: str | None = None
+    estimated_monthly_cost_savings_usd: float = 0.0
+    estimated_monthly_carbon_savings_kg: float = 0.0
+
+
+class SavingsSummary(BaseModel):
+    """Aggregated savings across all recommendations."""
+
+    total_monthly_cost_savings_usd: float = 0.0
+    total_monthly_carbon_savings_kg: float = 0.0
+    recommendation_count: int = 0
+    recommendations: list[Recommendation] = Field(default_factory=list)

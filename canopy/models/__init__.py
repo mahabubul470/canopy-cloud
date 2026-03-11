@@ -3,7 +3,10 @@ from canopy.models.core import (
     CostSnapshot,
     EcoWeight,
     EfficiencyTier,
+    Recommendation,
+    RecommendationType,
     Region,
+    SavingsSummary,
     Workload,
     WorkloadType,
 )
@@ -13,7 +16,10 @@ __all__ = [
     "CostSnapshot",
     "EcoWeight",
     "EfficiencyTier",
+    "Recommendation",
+    "RecommendationType",
     "Region",
+    "SavingsSummary",
     "Workload",
     "WorkloadType",
 ]

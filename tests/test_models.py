@@ -5,7 +5,10 @@ from canopy.models.core import (
     CostSnapshot,
     EcoWeight,
     EfficiencyTier,
+    Recommendation,
+    RecommendationType,
     Region,
+    SavingsSummary,
     Workload,
     WorkloadType,
 )
@@ -163,3 +166,80 @@ class TestEcoWeight:
     def test_good_status(self) -> None:
         ew = self._make_ecoweight(hourly_cost=0.8, hourly_carbon=80.0)
         assert ew.status == "good"
+
+
+class TestRecommendation:
+    def test_rightsize_recommendation(self) -> None:
+        rec = Recommendation(
+            workload_id="i-123",
+            workload_name="api-server",
+            recommendation_type=RecommendationType.RIGHTSIZE,
+            reason="Avg CPU 8.0% < 15% over 7 days",
+            current_instance_type="m5.2xlarge",
+            suggested_instance_type="m5.xlarge",
+            estimated_monthly_cost_savings_usd=140.16,
+            estimated_monthly_carbon_savings_kg=5.0,
+        )
+        assert rec.recommendation_type == RecommendationType.RIGHTSIZE
+        assert rec.estimated_monthly_cost_savings_usd == 140.16
+
+    def test_idle_recommendation(self) -> None:
+        rec = Recommendation(
+            workload_id="i-456",
+            workload_name="forgotten-box",
+            recommendation_type=RecommendationType.IDLE,
+            reason="Avg CPU 0.5% < 2%",
+            current_instance_type="c5.xlarge",
+            estimated_monthly_cost_savings_usd=124.1,
+        )
+        assert rec.recommendation_type == RecommendationType.IDLE
+        assert rec.suggested_instance_type is None
+
+    def test_region_move_recommendation(self) -> None:
+        rec = Recommendation(
+            workload_id="i-789",
+            workload_name="batch-worker",
+            recommendation_type=RecommendationType.REGION_MOVE,
+            reason="us-east-1 (312 gCO₂/kWh) → eu-north-1 (8 gCO₂/kWh)",
+            current_region="us-east-1",
+            suggested_region="eu-north-1",
+            estimated_monthly_carbon_savings_kg=20.0,
+        )
+        assert rec.recommendation_type == RecommendationType.REGION_MOVE
+        assert rec.suggested_region == "eu-north-1"
+
+
+class TestSavingsSummary:
+    def test_empty_summary(self) -> None:
+        summary = SavingsSummary()
+        assert summary.recommendation_count == 0
+        assert summary.total_monthly_cost_savings_usd == 0.0
+        assert summary.recommendations == []
+
+    def test_summary_with_recommendations(self) -> None:
+        recs = [
+            Recommendation(
+                workload_id="w1",
+                workload_name="a",
+                recommendation_type=RecommendationType.IDLE,
+                reason="idle",
+                estimated_monthly_cost_savings_usd=100.0,
+                estimated_monthly_carbon_savings_kg=10.0,
+            ),
+            Recommendation(
+                workload_id="w2",
+                workload_name="b",
+                recommendation_type=RecommendationType.RIGHTSIZE,
+                reason="rightsize",
+                estimated_monthly_cost_savings_usd=50.0,
+                estimated_monthly_carbon_savings_kg=5.0,
+            ),
+        ]
+        summary = SavingsSummary(
+            total_monthly_cost_savings_usd=150.0,
+            total_monthly_carbon_savings_kg=15.0,
+            recommendation_count=2,
+            recommendations=recs,
+        )
+        assert summary.recommendation_count == 2
+        assert summary.total_monthly_cost_savings_usd == 150.0
